@@ -111,7 +111,32 @@ async function tryScrape(domain) {
   return null;
 }
 
-// Source 4: Brandfetch (free tier, no API key needed for basic logos)
+// Source 4: Simple Icons (SVG, single colour — great for dark backgrounds)
+async function trySimpleIcons(company) {
+  try {
+    const slug = company.toLowerCase().replace(/[^a-z0-9]+/g, '').replace(/\s+/g, '');
+    const url = `https://cdn.simpleicons.org/${slug}/white`;
+    const res = await fetch(url);
+    if (res.status === 200 && res.body.length > 200) {
+      const body = res.body.toString('utf8');
+      if (body.includes('<svg')) {
+        return { source: 'simpleicons', data: res.body, ext: 'svg' };
+      }
+    }
+  } catch {}
+  // Try with spaces removed and common variants
+  try {
+    const slug = company.toLowerCase().replace(/\s+/g, '');
+    const url = `https://cdn.simpleicons.org/${slug}/white`;
+    const res = await fetch(url);
+    if (res.status === 200 && res.body.length > 200 && res.body.toString('utf8').includes('<svg')) {
+      return { source: 'simpleicons', data: res.body, ext: 'svg' };
+    }
+  } catch {}
+  return null;
+}
+
+// Source 5: Brandfetch (free tier, no API key needed for basic logos)
 async function tryBrandfetch(domain) {
   try {
     const url = `https://cdn.brandfetch.io/fallback/transparent/theme/dark/h/512/w/1024/icon?c=1id&t=1&domain=${domain}`;
@@ -136,6 +161,7 @@ async function fetchLogo(company, domain) {
 
   // Try sources in order of preference for dark backgrounds
   const sources = [
+    { name: 'Simple Icons (white SVG)', fn: () => trySimpleIcons(company) },
     { name: 'Brandfetch (dark)', fn: () => tryBrandfetch(domain) },
     { name: 'Website scrape', fn: () => tryScrape(domain) },
     { name: 'Clearbit', fn: () => tryClearbit(domain) },
