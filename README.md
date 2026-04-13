@@ -42,7 +42,15 @@ Built for offices, studios, streaming setups, and digital signage — anywhere y
 - **Amazon Fire TV** (TV or Stick) on the same network
 - **Stream Deck** (optional) — any device that can make HTTP requests works
 
-## Quick Start
+## One-Step Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jamespoulter/fire-tv-backgrounds/main/install.sh | bash
+```
+
+This clones the repo, installs dependencies, starts the server as a persistent macOS service, and prints the URLs you need. Drop your images into `~/fire-tv-backgrounds/backgrounds/` and you're done.
+
+## Manual Setup
 
 ### 1. Clone and install
 
@@ -64,6 +72,15 @@ cp ~/Desktop/my-loop.mp4 backgrounds/
 Supported formats: `.jpg` `.jpeg` `.png` `.webp` `.gif` `.bmp` `.svg` `.mp4` `.webm` `.mov`
 
 ### 3. Start the server
+
+**Option A — Run as persistent service (recommended):**
+
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+**Option B — Run manually:**
 
 ```bash
 npm start
