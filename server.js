@@ -98,11 +98,16 @@ function getState() {
     file: currentFile,
     color: currentColor,
     transition: transitionDuration,
+    display: currentFile && isLogo(currentFile) ? 'logo' : 'cover',
   };
 }
 
 function isVideo(filename) {
   return VIDEO_EXTS.has(path.extname(filename).toLowerCase());
+}
+
+function isLogo(filename) {
+  return /[-_]logo\./i.test(filename);
 }
 
 function getMediaList() {
