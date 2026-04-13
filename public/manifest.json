@@ -1,0 +1,10 @@
+{
+  "name": "Fire TV Background",
+  "short_name": "Background",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "start_url": "/",
+  "icons": []
+}

@@ -1,0 +1,8 @@
+node_modules/
+platform-tools/
+logs/
+config.json
+
+# Keep the demo image, ignore user backgrounds
+backgrounds/*
+!backgrounds/demo.svg

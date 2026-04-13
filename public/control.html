@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Background Control Panel</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      padding: 24px;
+      min-height: 100vh;
+    }
+    h1 { font-size: 20px; margin-bottom: 16px; color: #f46c42; }
+    h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #888; margin: 24px 0 12px; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .thumb {
+      position: relative;
+      aspect-ratio: 16/9;
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: border-color 0.2s, transform 0.1s;
+    }
+    .thumb:hover { border-color: #f46c42; transform: scale(1.02); }
+    .thumb.active { border-color: #d1f503; }
+    .thumb img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+    .thumb .name {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      background: rgba(0,0,0,0.7);
+      padding: 4px 8px;
+      font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn {
+      padding: 8px 16px;
+      border: 1px solid #444;
+      background: #2a2a3e;
+      color: #eee;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #3a3a5e; }
+    .btn.active { background: #f46c42; border-color: #f46c42; }
+
+    #status-bar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      background: #0f171f;
+      padding: 8px 24px;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      z-index: 10;
+    }
+    #status-bar .dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    #status-bar .dot.green { background: #4f4; }
+    #status-bar .dot.red { background: #f44; }
+
+    body { padding-top: 48px; }
+
+    .color-grid { display: flex; gap: 8px; flex-wrap: wrap; }
+    .color-swatch {
+      width: 48px; height: 48px;
+      border-radius: 8px;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: border-color 0.2s, transform 0.1s;
+    }
+    .color-swatch:hover { transform: scale(1.1); }
+    .color-swatch.active { border-color: #d1f503; }
+
+    .curl-hint {
+      background: #111;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 11px;
+      color: #aaa;
+      margin-top: 8px;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div id="status-bar">
+    <span><span class="dot" id="conn-dot"></span><span id="conn-text">Connecting...</span></span>
+    <span id="client-count"></span>
+  </div>
+
+  <h1>Fire TV Background Control</h1>
+
+  <h2>Backgrounds</h2>
+  <div class="grid" id="image-grid"></div>
+
+  <h2>Quick Colours</h2>
+  <div class="color-grid" id="color-grid"></div>
+
+  <h2>Actions</h2>
+  <div class="actions">
+    <button class="btn" onclick="setBlank()">Blank (Black)</button>
+    <button class="btn" onclick="refreshImages()">Refresh List</button>
+  </div>
+
+  <h2>Stream Deck Curl Commands</h2>
+  <div id="curl-hints"></div>
+
+  <script>
+    const MAC_IP = location.hostname;
+    const PORT = location.port || 3100;
+    const BASE = `http://${MAC_IP}:${PORT}`;
+
+    const BRAND_COLORS = [
+      { name: 'Navy', hex: '0f171f' },
+      { name: 'Orange', hex: 'f46c42' },
+      { name: 'Cream', hex: 'efd6bd' },
+      { name: 'Lime', hex: 'd1f503' },
+      { name: 'Gold', hex: 'c59f4d' },
+      { name: 'Indigo', hex: '7902f3' },
+      { name: 'Black', hex: '000000' },
+      { name: 'White', hex: 'ffffff' },
+    ];
+
+    let currentState = {};
+
+    async function api(path) {
+      const r = await fetch(path);
+      return r.json();
+    }
+
+    async function setImage(name) {
+      await fetch(`/api/set?image=${encodeURIComponent(name)}`);
+    }
+
+    async function setColor(hex) {
+      await fetch(`/api/color?hex=${hex}`);
+    }
+
+    async function setBlank() {
+      await fetch('/api/blank');
+    }
+
+    async function refreshImages() {
+      const { images } = await api('/api/images');
+      const grid = document.getElementById('image-grid');
+      const hints = document.getElementById('curl-hints');
+      grid.innerHTML = '';
+      let curlHtml = '';
+
+      images.forEach(img => {
+        const div = document.createElement('div');
+        div.className = 'thumb' + (currentState.image === img ? ' active' : '');
+        div.innerHTML = `<img src="/backgrounds/${encodeURIComponent(img)}" loading="lazy"><div class="name">${img}</div>`;
+        div.onclick = () => setImage(img);
+        grid.appendChild(div);
+        curlHtml += `<div class="curl-hint">curl "${BASE}/api/set?image=${encodeURIComponent(img)}"</div>`;
+      });
+
+      if (images.length === 0) {
+        grid.innerHTML = '<p style="color:#888">No images found. Drop images into the <code>backgrounds/</code> folder.</p>';
+      }
+
+      hints.innerHTML = curlHtml;
+    }
+
+    function renderColors() {
+      const grid = document.getElementById('color-grid');
+      BRAND_COLORS.forEach(c => {
+        const div = document.createElement('div');
+        div.className = 'color-swatch';
+        div.style.background = '#' + c.hex;
+        div.title = c.name;
+        if (c.hex === 'ffffff' || c.hex === 'efd6bd' || c.hex === 'd1f503') {
+          div.style.border = '2px solid #444';
+        }
+        div.onclick = () => setColor(c.hex);
+        grid.appendChild(div);
+      });
+    }
+
+    function connectSSE() {
+      const es = new EventSource('/api/events');
+      const dot = document.getElementById('conn-dot');
+      const text = document.getElementById('conn-text');
+
+      es.onopen = () => {
+        dot.className = 'dot green';
+        text.textContent = 'Connected';
+      };
+
+      es.onmessage = (e) => {
+        currentState = JSON.parse(e.data);
+        // Update active states
+        document.querySelectorAll('.thumb').forEach(t => {
+          const name = t.querySelector('.name').textContent;
+          t.classList.toggle('active', name === currentState.image);
+        });
+      };
+
+      es.onerror = () => {
+        dot.className = 'dot red';
+        text.textContent = 'Disconnected';
+        es.close();
+        setTimeout(connectSSE, 3000);
+      };
+    }
+
+    // Poll health for client count
+    setInterval(async () => {
+      try {
+        const h = await api('/api/health');
+        document.getElementById('client-count').textContent = `${h.clients} display(s) connected`;
+      } catch {}
+    }, 5000);
+
+    renderColors();
+    refreshImages();
+    connectSSE();
+  </script>
+</body>
+</html>

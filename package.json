@@ -1,0 +1,12 @@
+{
+  "name": "fire-tv-backgrounds",
+  "version": "1.0.0",
+  "description": "Background image server for Fire TV, controlled via Stream Deck",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}

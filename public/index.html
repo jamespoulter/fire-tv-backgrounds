@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Background Display</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; cursor: none !important; outline: none !important; }
+    *:focus, *:focus-visible { outline: none !important; box-shadow: none !important; }
+    html, body {
+      width: 100vw; height: 100vh;
+      overflow: hidden;
+      background: #000;
+      cursor: none;
+      overscroll-behavior: none;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    .layer {
+      position: fixed;
+      top: -5px; left: -5px;
+      width: calc(100vw + 10px); height: calc(100vh + 10px);
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      transition: opacity var(--transition, 1s) ease-in-out;
+    }
+
+    #bg-current { z-index: 1; opacity: 1; }
+    #bg-next { z-index: 2; opacity: 0; }
+
+    .layer video {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: fill;
+    }
+
+    #status {
+      position: fixed;
+      bottom: 20px; right: 20px;
+      z-index: 100;
+      background: rgba(0,0,0,0.6);
+      color: #4f4;
+      font: 12px monospace;
+      padding: 4px 8px;
+      border-radius: 4px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    #status.visible { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div id="bg-current" class="layer"></div>
+  <div id="bg-next" class="layer"></div>
+  <div id="status">Connected</div>
+
+  <script>
+    const bgCurrent = document.getElementById('bg-current');
+    const bgNext = document.getElementById('bg-next');
+    const status = document.getElementById('status');
+    let activeLayer = bgCurrent;
+    let inactiveLayer = bgNext;
+
+    function setTransition(seconds) {
+      document.documentElement.style.setProperty('--transition', seconds + 's');
+    }
+
+    function clearLayer(layer) {
+      layer.style.backgroundImage = 'none';
+      layer.style.backgroundColor = 'transparent';
+      // Remove any existing video
+      const vid = layer.querySelector('video');
+      if (vid) {
+        vid.pause();
+        vid.removeAttribute('src');
+        vid.load();
+        layer.removeChild(vid);
+      }
+    }
+
+    function applyState(state) {
+      setTransition(state.transition || 1);
+      clearLayer(inactiveLayer);
+
+      if (state.mode === 'color') {
+        inactiveLayer.style.backgroundColor = state.color;
+        doTransition();
+
+      } else if (state.mode === 'video' && state.file) {
+        const url = '/backgrounds/' + encodeURIComponent(state.file);
+        const video = document.createElement('video');
+        // Set all attributes before src to maximise autoplay compatibility
+        video.setAttribute('autoplay', '');
+        video.setAttribute('loop', '');
+        video.setAttribute('muted', '');
+        video.setAttribute('playsinline', '');
+        video.setAttribute('preload', 'auto');
+        video.setAttribute('disableRemotePlayback', '');
+        video.muted = true;
+        video.volume = 0;
+        video.playsInline = true;
+        video.autoplay = true;
+        video.loop = true;
+        video.src = url;
+        inactiveLayer.appendChild(video);
+
+        let transitioned = false;
+        function onReady() {
+          if (transitioned) return;
+          transitioned = true;
+          video.play().catch(() => {});
+          doTransition();
+        }
+
+        video.addEventListener('canplay', onReady, { once: true });
+        video.addEventListener('playing', onReady, { once: true });
+
+        // Force play attempt + fallback transition
+        video.load();
+        setTimeout(() => {
+          video.play().catch(() => {});
+          if (!transitioned) { transitioned = true; doTransition(); }
+        }, 1500);
+
+      } else if (state.mode === 'image' && state.file) {
+        const url = '/backgrounds/' + encodeURIComponent(state.file);
+        const img = new Image();
+        img.onload = () => {
+          inactiveLayer.style.backgroundImage = `url('${url}')`;
+          doTransition();
+        };
+        img.src = url;
+        return;
+      }
+    }
+
+    function doTransition() {
+      inactiveLayer.style.opacity = '1';
+      activeLayer.style.opacity = '0';
+
+      const oldActive = activeLayer;
+      activeLayer = inactiveLayer;
+      inactiveLayer = oldActive;
+
+      // Clean up old layer after crossfade completes
+      const transMs = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--transition')) * 1000 || 1000;
+      setTimeout(() => clearLayer(inactiveLayer), transMs + 200);
+    }
+
+    function showStatus(msg, duration) {
+      status.textContent = msg;
+      status.classList.add('visible');
+      if (duration) {
+        setTimeout(() => status.classList.remove('visible'), duration);
+      }
+    }
+
+    function connect() {
+      const es = new EventSource('/api/events');
+
+      es.onmessage = (e) => {
+        try {
+          const state = JSON.parse(e.data);
+          applyState(state);
+          showStatus('Updated', 2000);
+        } catch (err) {
+          console.error('Parse error:', err);
+        }
+      };
+
+      es.onopen = () => showStatus('Connected', 3000);
+
+      es.onerror = () => {
+        showStatus('Reconnecting...', 0);
+        es.close();
+        setTimeout(connect, 3000);
+      };
+    }
+
+    // ── Keep screen awake ──
+
+    let wakeLock = null;
+    async function requestWakeLock() {
+      if ('wakeLock' in navigator) {
+        try {
+          wakeLock = await navigator.wakeLock.request('screen');
+          wakeLock.addEventListener('release', () => {
+            setTimeout(requestWakeLock, 1000);
+          });
+        } catch {}
+      }
+    }
+    requestWakeLock();
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') requestWakeLock();
+    });
+
+    // Hidden video fallback for older browsers
+    function startNoSleepVideo() {
+      const video = document.createElement('video');
+      video.setAttribute('playsinline', '');
+      video.setAttribute('muted', '');
+      video.muted = true;
+      video.loop = true;
+      video.style.cssText = 'position:fixed;top:-1px;left:-1px;width:1px;height:1px;opacity:0.01';
+      video.src = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAABltZGF0AAACrgYF//+q3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE1MiByMjg1NCBlOWE1OTAzIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAxNyAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTMgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTI1IHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAADaWWIhAAv//72rvzLK0cLlS4dWXuzUfLoSXL9iDB9aAAAAwAAAwAAJuKiZ0WFMeJsgAAALmAIWElDyDzETFWKgSxgM0AAAAMAAAMAB1Mi/gAAFGmBAAKn/EEAAAADAAADAA0gEBAe';
+      document.body.appendChild(video);
+      video.play().catch(() => {});
+    }
+    if (!('wakeLock' in navigator)) {
+      startNoSleepVideo();
+    }
+
+    connect();
+  </script>
+</body>
+</html>
