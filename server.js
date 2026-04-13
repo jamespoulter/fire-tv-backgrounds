@@ -282,6 +282,95 @@ app.all('/api/firetv/sleep', (req, res) => {
   }
 });
 
+// ── Logo fetcher ──
+
+const { fetchLogo } = require('./fetch-logo');
+
+app.all('/api/logo', async (req, res) => {
+  const company = req.body?.company || req.query?.company;
+  const domain = req.body?.domain || req.query?.domain;
+  if (!company) return res.status(400).json({ error: 'company parameter required' });
+
+  try {
+    const result = await fetchLogo(company, domain || null);
+    if (result.ok) {
+      // Auto-set as current background
+      currentFile = result.filename;
+      currentMode = result.filename.endsWith('.mp4') ? 'video' : 'image';
+      broadcast();
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Chromecast control ──
+
+const CATT = path.join(process.env.HOME, 'Library/Python/3.9/bin/catt');
+
+function catt(args) {
+  const config = loadConfig();
+  const device = config.chromecastName;
+  const deviceFlag = device ? `-d "${device}"` : '';
+  return execSync(`${CATT} ${deviceFlag} ${args}`, {
+    encoding: 'utf8',
+    timeout: 15000,
+    env: { ...process.env, PATH: `${path.dirname(CATT)}:${process.env.PATH}` },
+  });
+}
+
+// Scan for Chromecasts on the network
+app.all('/api/chromecast/scan', (req, res) => {
+  try {
+    const out = execSync(`${CATT} scan`, {
+      encoding: 'utf8',
+      timeout: 15000,
+      env: { ...process.env, PATH: `${path.dirname(CATT)}:${process.env.PATH}` },
+    });
+    const devices = out.trim().split('\n').filter(Boolean).map(line => {
+      const match = line.match(/^([\d.]+)\s+-\s+(.+?)(?:\s+-\s+(.+))?$/);
+      return match ? { ip: match[1], name: match[2].trim(), model: (match[3] || '').trim() } : { raw: line };
+    });
+    res.json({ ok: true, devices });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Save Chromecast device name
+app.all('/api/chromecast/setup', (req, res) => {
+  const name = req.body?.name || req.query?.name;
+  if (!name) return res.status(400).json({ error: 'name parameter required (device name from /api/chromecast/scan)' });
+
+  const config = loadConfig();
+  config.chromecastName = name;
+  saveConfig(config);
+  res.json({ ok: true, name });
+});
+
+// Cast display page to Chromecast
+app.all('/api/chromecast/launch', (req, res) => {
+  try {
+    const localIP = getLocalIP();
+    const url = `http://${localIP}:${PORT}`;
+    catt(`cast_site ${url}`);
+    res.json({ ok: true, url, message: 'Display page cast to Chromecast' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Stop casting
+app.all('/api/chromecast/stop', (req, res) => {
+  try {
+    catt('stop');
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   const config = loadConfig();
