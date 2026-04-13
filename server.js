@@ -236,7 +236,7 @@ app.all('/api/firetv/launch', (req, res) => {
     const url = `http://${localIP}:${PORT}`;
     // Disable screensaver and set max screen timeout
     adb('shell settings put secure screensaver_enabled 0');
-    adb('shell settings put system screen_off_timeout 2147483647');
+    adb('shell settings put system screen_off_timeout 28800000');
     // Force stop Silk first for a clean launch
     adb('shell am force-stop com.amazon.cloud9');
     // Set immersive mode before launching
